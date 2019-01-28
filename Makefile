@@ -7,6 +7,7 @@ CC = gcc
 CPPFLAGS = -Iinclude
 CFLAGS = -fPIC -g -fvisibility=hidden -Wall -Wextra -Werror
 LDFLAGS = -fPIC -shared -Wl,--no-allow-shlib-undefined
+LIBS += -ldl
 ifeq (,$(DEBUG))
   CFLAGS += -O2
   LDFLAGS += -Wl,-O2
@@ -24,28 +25,38 @@ endif
 
 DESTDIR = /usr
 
-OBJS = bin/gdb.o bin/debugme.o bin/init.o bin/common.o
+OBJS32 = bin/gdb-32.o bin/debugme-32.o bin/init-32.o bin/common-32.o
+OBJS64 = bin/gdb-64.o bin/debugme-64.o bin/init-64.o bin/common-64.o
 
 $(shell mkdir -p bin)
 
-all: bin/libdebugme.so
+all: bin/libdebugme-32.so bin/libdebugme-64.so
 
 install:
+	$(error install not supported with 32/64 bit build hack)
 	install -D bin/libdebugme.so $(DESTDIR)/lib
 
 DEBUGME_OPTIONS = handle_signals=1:quiet=1:altstack=1:debug_opts=-quiet -batch -ex backtrace
 
 check:
+	$(error check not supported with 32/64 bit build hack)
 	$(CC) $(CPPFLAGS) test/segv.c -o bin/a.out
 	if DEBUGME_OPTIONS='$(DEBUGME_OPTIONS)' LD_PRELOAD=bin/libdebugme.so bin/a.out; then false; fi
 	$(CC) $(CPPFLAGS) test/segv.c -Wl,--no-as-needed bin/libdebugme.so -o bin/a.out
 	if DEBUGME_OPTIONS='$(DEBUGME_OPTIONS)' LD_LIBRARY_PATH=bin bin/a.out; then false; fi
 
-bin/libdebugme.so: $(OBJS) bin/FLAGS Makefile
-	$(CC) $(LDFLAGS) $(OBJS) $(LIBS) -o $@
+bin/libdebugme-32.so: $(OBJS32) bin/FLAGS Makefile
+	$(CC) -m32 $(LDFLAGS) $(OBJS32) $(LIBS) -o $@
 
-bin/%.o: src/%.c Makefile bin/FLAGS
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+bin/libdebugme-64.so: $(OBJS64) bin/FLAGS Makefile
+	$(CC) -m64 $(LDFLAGS) $(OBJS64) $(LIBS) -o $@
+
+bin/%-32.o: src/%.c Makefile bin/FLAGS
+	$(CC) -m32 $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+bin/%-64.o: src/%.c Makefile bin/FLAGS
+	$(CC) -m64 $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
 
 bin/FLAGS: FORCE
 	if test x"$(CFLAGS) $(LDFLAGS)" != x"$$(cat $@)"; then \

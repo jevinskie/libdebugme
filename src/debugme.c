@@ -11,10 +11,14 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#define __USE_GNU
 #include <signal.h>
 #include <string.h>
 
 #include <unistd.h>
+
+#include <assert.h>
+#include <dlfcn.h>
 
 unsigned dbg_flags;
 const char *dbg_opts;
@@ -22,6 +26,14 @@ int init_done;
 int debug;
 int disabled;
 int quiet;
+static int bad_signals[] = { SIGILL, SIGABRT, SIGFPE, SIGSEGV, SIGBUS };
+
+static typeof(signal) *signal_p;
+static typeof(sigaction) *sigaction_p;
+static typeof(sigprocmask) *sigprocmask_p;
+static typeof(sigemptyset) *sigemptyset_p;
+static typeof(sigaddset) *sigaddset_p;
+static typeof(sigfillset) *sigfillset_p;
 
 // Interface with debugger
 EXPORT volatile int __debugme_go;
@@ -30,6 +42,67 @@ static void sighandler(int sig) {
   sig = sig;
   debugme_debug(dbg_flags, dbg_opts);
   exit(1);
+}
+
+INIT static void debugme_init_fptrs(void) {
+  // fprintf(stderr, "%s: start\n", __func__);
+  signal_p = dlsym(RTLD_NEXT, "signal");
+  assert(signal_p);
+  // fprintf(stderr, "%s: signal: %p signal_p: %p\n", __func__, signal, signal_p);
+  sigaction_p = dlsym(RTLD_NEXT, "sigaction");
+  assert(sigaction_p);
+  sigprocmask_p = dlsym(RTLD_NEXT, "sigprocmask");
+  assert(sigprocmask_p);
+  sigemptyset_p = dlsym(RTLD_NEXT, "sigemptyset");
+  assert(sigemptyset_p);
+  sigaddset_p = dlsym(RTLD_NEXT, "sigaddset");
+  assert(sigaddset_p);
+  sigfillset_p = dlsym(RTLD_NEXT, "sigfillset");
+  assert(sigfillset_p);
+  // fprintf(stderr, "%s: end\n", __func__);
+}
+
+int called_by_debugme;
+
+__attribute__((noinline, used))
+static void print_caller(void) {
+  fprintf(stderr, "%s: caller: %p\n", __func__, __builtin_return_address(0));
+}
+
+EXPORT sighandler_t signal(int signum, sighandler_t handler) {
+  // fprintf(stderr, "debugme %s(%d, %p)\n", __func__, signum, handler);
+  // fprintf(stderr, "debugme %s called_by_debugme: %d\n", __func__, called_by_debugme);
+  // print_caller();
+  return signal_p(signum, handler);
+}
+
+EXPORT int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact) {
+  // fprintf(stderr, "debugme %s(%d, %p, %p)\n", __func__, signum, act, oldact);
+  if (SIGSEGV == signum) {
+    // fprintf(stderr, "debugme %s: skipping for SIGSEGV\n", __func__);
+    return 0;
+  }
+  return sigaction_p(signum, act, oldact);
+}
+
+EXPORT int sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
+  // fprintf(stderr, "debugme %s(%d, %p, %p)\n", __func__, how, set, oldset);
+  return sigprocmask_p(how, set, oldset);
+}
+
+EXPORT int sigemptyset(sigset_t *set) {
+  // fprintf(stderr, "debugme %s(%p)\n", __func__, set);
+  return sigemptyset_p(set);
+}
+
+EXPORT int sigaddset(sigset_t *set, int signum) {
+  // fprintf(stderr, "debugme %s(%p, %d)\n", __func__, set, signum);
+  return sigaddset_p(set, signum);
+}
+
+EXPORT int sigfillset(sigset_t *set) {
+  // fprintf(stderr, "debugme %s(%p,)\n", __func__, set);
+  return sigfillset_p(set);
 }
 
 // TODO: optionally preserve existing handlers
@@ -41,8 +114,6 @@ EXPORT int debugme_install_sighandlers(unsigned dbg_flags_, const char *dbg_opts
   dbg_flags = dbg_flags_;
   dbg_opts = dbg_opts_;
 
-  int bad_signals[] = { SIGILL, SIGABRT, SIGFPE, SIGSEGV, SIGBUS };
-
   size_t i;
   for(i = 0; i < ARRAY_SIZE(bad_signals); ++i) {
     int sig = bad_signals[i];
@@ -50,7 +121,11 @@ EXPORT int debugme_install_sighandlers(unsigned dbg_flags_, const char *dbg_opts
     if(debug) {
       fprintf(stderr, "debugme: setting signal handler for signal %d (%s)\n", sig, signame);
     }
-    if(SIG_ERR == signal(sig, sighandler)) {
+    sighandler_t sig_ret;
+    called_by_debugme = 1;
+    sig_ret = signal_p(sig, sighandler);
+    called_by_debugme = 0;
+    if(SIG_ERR == sig_ret) {
       fprintf(stderr, "libdebugme: failed to intercept signal %d (%s)\n", sig, signame);
     }
   }
