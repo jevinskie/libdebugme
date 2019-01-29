@@ -38,10 +38,22 @@ static typeof(sigfillset) *sigfillset_p;
 // Interface with debugger
 EXPORT volatile int __debugme_go;
 
+__attribute__((used))
 static void sighandler(int sig) {
   sig = sig;
-  debugme_debug(dbg_flags, dbg_opts);
-  exit(1);
+  kill(getpid(), SIGSTOP);
+  // debugme_debug(dbg_flags, dbg_opts);
+  // exit(1);
+}
+
+__attribute__((used))
+static void sighandler_turbo(int sig, siginfo_t *info, void *context) {
+  (void)sig;
+  (void)info;
+  (void)context;
+  kill(getpid(), SIGSTOP);
+  // debugme_debug(dbg_flags, dbg_opts);
+  // exit(1);
 }
 
 INIT static void debugme_init_fptrs(void) {
@@ -121,11 +133,17 @@ EXPORT int debugme_install_sighandlers(unsigned dbg_flags_, const char *dbg_opts
     if(debug) {
       fprintf(stderr, "debugme: setting signal handler for signal %d (%s)\n", sig, signame);
     }
-    sighandler_t sig_ret;
+    // sighandler_t sig_ret;
+    int sig_ret;
     called_by_debugme = 1;
-    sig_ret = signal_p(sig, sighandler);
+    // sig_ret = signal_p(sig, sighandler);
+    struct sigaction sa = {NULL};
+    sa.sa_sigaction = sighandler_turbo;
+    sa.sa_flags = SA_SIGINFO;
+    sig_ret = sigaction_p(sig, &sa, NULL);
     called_by_debugme = 0;
-    if(SIG_ERR == sig_ret) {
+    // if(SIG_ERR == sig_ret) {
+    if (!sig_ret) {
       fprintf(stderr, "libdebugme: failed to intercept signal %d (%s)\n", sig, signame);
     }
   }
