@@ -36,7 +36,7 @@ static int is_ptrace_allowed(void) {
 }
 
 INIT static void debugme_init(void) {
-  fprintf(stderr, "debugme init\n");
+  // fprintf(stderr, "debugme init\n");
   if(init_done)
     return;
 

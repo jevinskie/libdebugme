@@ -144,7 +144,7 @@ EXPORT int debugme_install_sighandlers(unsigned dbg_flags_, const char *dbg_opts
     sig_ret = sigaction_p(sig, &sa, NULL);
     called_by_debugme = 0;
     // if(SIG_ERR == sig_ret) {
-    if (!sig_ret) {
+    if (sig_ret) {
       fprintf(stderr, "libdebugme: failed to intercept signal %d (%s)\n", sig, signame);
     }
   }
