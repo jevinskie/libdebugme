@@ -51,6 +51,7 @@ static void sighandler_turbo(int sig, siginfo_t *info, void *context) {
   (void)sig;
   (void)info;
   (void)context;
+  fprintf(stderr, "connect by running:\ngdb --pid=%d\n", getpid());
   kill(getpid(), SIGSTOP);
   // debugme_debug(dbg_flags, dbg_opts);
   // exit(1);
